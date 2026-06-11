@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tone.js 20-Band Vocoder Studio</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f0f12;
+            color: #e2e2e9;
+            padding: 20px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1, h2 { color: #00d2ff; text-shadow: 0 0 10px rgba(0, 210, 255, 0.2); margin-top: 0;}
+        .panel {
+            background: #17171c;
+            border: 1px solid #2c2c35;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .flex-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+        .flex-col { display: flex; flex-direction: column; gap: 5px; }
+        button {
+            background: #00d2ff; color: #0f0f12; border: none; padding: 10px 20px;
+            font-weight: bold; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+        }
+        button:hover { background: #00b2d9; transform: translateY(-1px); }
+        button:disabled { background: #444 !important; color: #888 !important; cursor: not-allowed; }
+        select, input[type="file"], input[type="range"], input[type="text"] {
+            background: #25252e; color: #fff; border: 1px solid #3d3d4c;
+            padding: 10px; border-radius: 6px; cursor: pointer;
+            max-width: 100%;
+        }
+        input[type="text"] { cursor: text; min-width: 250px; flex: 1; }
+        video { width: 100%; max-width: 320px; border-radius: 6px; background: #000; margin-top: 10px; }
+        
+        .matrix-container {
+            display: flex;
+            justify-content: space-between;
+            background: #1c1c24;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #2d2d3a;
+            overflow-x: auto;
+            gap: 5px;
+        }
+        .band-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            min-width: 35px;
+        }
+        .band-column input[type="range"] {
+            writing-mode: vertical-lr;
+            direction: rtl;
+            width: 25px;
+            height: 140px;
+            margin: 10px 0;
+            padding: 0;
+        }
+        .band-label { font-size: 0.7rem; color: #8a8a9e; font-weight: bold; text-align: center; }
+        .control-section { 
+            background: #1c1c24; 
+            padding: 15px; 
+            border-radius: 8px; 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 20px; 
+            border: 1px solid #2d2d3a;
+            margin-bottom: 15px;
+        }
+        .highlight-section { border: 1px solid #ff007f55; }
+        .mix-section { border: 1px solid #00d2ff55; }
+        .info-text { color: #8a8a9e; font-size: 0.85rem; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>Tone.js 20-Band Vocoder Studio</h1>
+
+    <div class="panel">
+        <h2>1. Äänenlähde (Modulator)</h2>
+        <div class="flex-row">
+            <select id="sourceSelect">
+                <option value="mic">Mikrofoni (Live In)</option>
+                <option value="none">Vain TTS (Ei muuta lähdettä)</option>
+                <option value="system">Järjestelmän Ääni (Selain/Ruudunjako)</option>
+                <option value="audio">Audio-tiedosto</option>
+                <option value="video">Video-tiedosto</option>
+            </select>
+            <button id="toggleBtn">Käynnistä Vocoder</button>
+        </div>
+
+        <div id="audioGroup" style="display:none; margin-top: 15px;" class="control-section">
+            <label>Lataa audiotiedosto: </label>
+            <input type="file" id="audioFile" accept="audio/*">
+            <p id="audioStatus" class="info-text">Valitse tiedosto aloittaaksesi.</p>
+        </div>
+
+        <div id="videoGroup" style="display:none; margin-top: 15px;" class="control-section">
+            <label>Lataa videotiedosto: </label>
+            <input type="file" id="videoFile" accept="video/*">
+            <br><video id="videoElement" controls loop playsinline></video>
+        </div>
+    </div>
+
+    <div class="panel" style="border-color: #ffaa00;">
+        <h2 style="color: #ffaa00;">Puhesynteesi (TTS)</h2>
+        
+        <div class="control-section" style="border-color: #00ffaa;">
+            <div class="flex-col" style="width: 100%;">
+                <label style="color: #00ffaa; font-weight: bold;">Ulkoinen API (Google TTS) - Suositeltu!</label>
+                <p class="info-text" style="margin-top: 0;">Lataa äänen verkosta ja reitittää sen suoraan vokooderiin. (Muista käynnistää Vocoder ensin!)</p>
+                <div class="flex-row" style="width: 100%;">
+                    <input type="text" id="extTtsInput" placeholder="Kirjoita tekstiä tähän..." value="Hei, minä olen ulkoinen robottiääni.">
+                    <button id="extTtsBtn" style="background: #00ffaa; color: #000;">Puhu Vokooderiin</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <div class="flex-col" style="width: 100%;">
+                <label style="font-weight: bold;">Selaimen Oma TTS (Vaatii Järjestelmän Ääni -jaon)</label>
+                <div class="flex-row" style="width: 100%; margin-top: 10px;">
+                    <select id="ttsVoice" style="flex: 1; max-width: 300px;">
+                        <option value="">Ladataan ääniä...</option>
+                    </select>
+                    <input type="text" id="ttsInput" placeholder="Kirjoita jotain..." value="Terve, minä olen vokooderi.">
+                    <button id="ttsBtn" style="background: #ffaa00; color: #000;">Puhu Selaimesta</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>2. Master & Efektit</h2>
+        
+        <div class="control-section mix-section">
+            <div class="flex-col">
+                <label style="color: #00d2ff; font-weight: bold;">Wet / Dry Mix</label>
+                <input type="range" id="mixSlider" min="0" max="1" step="0.01" value="0.5">
+                <span id="mixDisplay">50% Wet</span>
+            </div>
+            <div class="flex-col">
+                <label style="color: #00d2ff; font-weight: bold;">Dry Latenssikompensaatio</label>
+                <input type="range" id="dryDelaySlider" min="0" max="300" step="1" value="40">
+                <span id="dryDelayDisplay">40 ms</span>
+            </div>
+            <div class="flex-col" style="margin-left: auto;">
+                <label style="color: #ff007f; font-weight: bold;">Master Volume</label>
+                <input type="range" id="masterVol" min="-40" max="6" step="1" value="0">
+                <span id="volDisplay">0 dB</span>
+            </div>
+        </div>
+
+        <div class="flex-row" style="gap: 15px; align-items: stretch;">
+            <div class="control-section highlight-section" style="flex: 1;">
+                <h3 style="margin-top:0; font-size: 1rem; color: #ff007f;">VCA LFO</h3>
+                <div class="flex-row">
+                    <select id="lfoWave">
+                        <option value="sine">Sini</option>
+                        <option value="square">Kantti</option>
+                        <option value="triangle">Kolmio</option>
+                    </select>
+                    <div class="flex-col">
+                        <label>Nopeus: <span id="lfoRateDisplay">1.0 Hz</span></label>
+                        <input type="range" id="lfoRate" min="0.1" max="20" step="0.1" value="1">
+                    </div>
+                    <div class="flex-col">
+                        <label>Syvyys: <span id="lfoDepthDisplay">0%</span></label>
+                        <input type="range" id="lfoDepth" min="0" max="1" step="0.01" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section" style="flex: 1;">
+                <h3 style="margin-top:0; font-size: 1rem;">Tilaefektit</h3>
+                <div class="flex-row">
+                    <div class="flex-col">
+                        <label>Chorus Mix</label>
+                        <input type="range" id="chorusMix" min="0" max="1" step="0.01" value="0">
+                    </div>
+                    <div class="flex-col">
+                        <label>Delay Aika</label>
+                        <input type="range" id="delayTime" min="0" max="1" step="0.01" value="0.3">
+                    </div>
+                    <div class="flex-col">
+                        <label>Reverb Mix</label>
+                        <input type="range" id="reverbMix" min="0" max="1" step="0.01" value="0">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>3. Vokooderimatriisi (20 Kaistaa)</h2>
+        <div class="control-section flex-row">
+            <div class="flex-col">
+                <label>Carrier Aaltomuoto: </label>
+                <select id="waveSelect">
+                    <option value="sawtooth">Sawtooth (Klassinen Robo)</option>
+                    <option value="square">Square (8-Bit)</option>
+                    <option value="triangle">Triangle (Hymisevä)</option>
+                </select>
+            </div>
+            <div class="flex-col">
+                <label>Carrier Pohjataajuus: </label>
+                <div class="flex-row">
+                    <input type="range" id="pitchSlider" min="45" max="400" value="90">
+                    <span id="pitchDisplay">90 Hz</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="matrix-container" id="matrixContainer"></div>
+    </div>
+
+    <script>
+        const frequencies = [60, 90, 130, 180, 250, 350, 480, 650, 880, 1200, 1600, 2200, 3000, 4000, 5400, 7200, 9500, 11500, 13500, 16000];
+        
+        let isRunning = false;
+        let carrier, modulatorSource, systemStream, meterLoop;
+        let vocoderMatrix = [];
+        let audioBuffer = null;
+
+        // --- NATIVE WEB SPEECH API (TTS) SETUP ---
+        const ttsVoiceSelect = document.getElementById('ttsVoice');
+        let availableVoices = [];
+
+        function populateVoiceList() {
+            availableVoices = window.speechSynthesis.getVoices();
+            ttsVoiceSelect.innerHTML = '';
+            
+            if(availableVoices.length === 0) {
+                ttsVoiceSelect.innerHTML = '<option value="">Ei ääniä löydetty</option>';
+                return;
+            }
+
+            availableVoices.forEach((voice, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                let prefix = voice.lang.includes('fi') ? "🇫🇮 " : "";
+                option.textContent = `${prefix}${voice.name} (${voice.lang})`;
+                
+                if(voice.lang.includes('fi') && !ttsVoiceSelect.hasAttribute('data-default-set')) {
+                    option.selected = true;
+                    ttsVoiceSelect.setAttribute('data-default-set', 'true');
+                }
+                ttsVoiceSelect.appendChild(option);
+            });
+        }
+
+        populateVoiceList();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+
+        document.getElementById('ttsBtn').addEventListener('click', () => {
+            const text = document.getElementById('ttsInput').value;
+            if (text !== '') {
+                const utterance = new SpeechSynthesisUtterance(text);
+                const selectedVoice = availableVoices[ttsVoiceSelect.value];
+                if (selectedVoice) utterance.voice = selectedVoice;
+                
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utterance);
+            }
+        });
+        
+        // --- UUSI ULKOINEN API (GOOGLE TTS) SETUP ---
+        document.getElementById('extTtsBtn').addEventListener('click', async () => {
+            if (!isRunning) {
+                alert("Käynnistä Vocoder ensin jotta ääni reitittyy oikein!");
+                return;
+            }
+
+            const text = document.getElementById('extTtsInput').value;
+            if (!text) return;
+            
+            const btn = document.getElementById('extTtsBtn');
+            const originalText = btn.innerText;
+            btn.innerText = "Ladataan...";
+            btn.disabled = true;
+
+            try {
+                const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=fi&client=tw-ob`;
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(ttsUrl)}`;
+                
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error("Verkkovirhe TTS-haussa");
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const buffer = await Tone.context.decodeAudioData(arrayBuffer);
+                
+                const ttsPlayer = new Tone.Player(buffer).connect(modulatorBus);
+                ttsPlayer.start();
+                
+            } catch (err) {
+                console.error("Ulkoinen TTS Virhe:", err);
+                alert("Ulkoisen TTS:n lataus epäonnistui.");
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        });
+
+        // AUDIO-SOLMUT & REITITYS
+        const modulatorBus = new Tone.Gain(1);
+        const dummySilentGain = new Tone.Gain(0).toDestination();
+        modulatorBus.connect(dummySilentGain); 
+
+        const vocoderBus = new Tone.Gain(1);
+        const mixCrossfade = new Tone.CrossFade(0.5); 
+
+        const dryDelayComp = new Tone.Delay(0.04, 1); 
+        modulatorBus.connect(dryDelayComp);
+        dryDelayComp.connect(mixCrossfade.a); 
+
+        vocoderBus.connect(mixCrossfade.b);   
+
+        // Efektiketju
+        const vcaNode = new Tone.Gain(1);
+        const chorusNode = new Tone.Chorus(4, 2.5, 0.5).start();
+        chorusNode.wet.value = 0;
+        const delayNode = new Tone.FeedbackDelay(0.3, 0.2);
+        delayNode.wet.value = 0.5;
+        const reverbNode = new Tone.Reverb({ decay: 3, wet: 0 }); 
+        const masterVolumeNode = new Tone.Volume(0).toDestination();
+
+        mixCrossfade.chain(vcaNode, chorusNode, delayNode, reverbNode, masterVolumeNode);
+
+        // VCA LFO
+        const vcaLfo = new Tone.LFO({ type: "sine", frequency: 1, min: 1, max: 1 }).start();
+        vcaLfo.connect(vcaNode.gain);
+
+        // DOM Elementit
+        const toggleBtn = document.getElementById('toggleBtn');
+        const sourceSelect = document.getElementById('sourceSelect');
+        const matrixContainer = document.getElementById('matrixContainer');
+
+        // Mix, Latenssi & Master Tapahtumat
+        document.getElementById('mixSlider').addEventListener('input', e => {
+            mixCrossfade.fade.value = e.target.value;
+            let wetPercent = Math.round(e.target.value * 100);
+            document.getElementById('mixDisplay').innerText = wetPercent === 100 ? "100% Wet" : wetPercent === 0 ? "100% Dry" : `${wetPercent}% Wet`;
+        });
+        
+        document.getElementById('dryDelaySlider').addEventListener('input', e => {
+            let ms = e.target.value;
+            dryDelayComp.delayTime.value = ms / 1000;
+            document.getElementById('dryDelayDisplay').innerText = `${ms} ms`;
+        });
+
+        document.getElementById('masterVol').addEventListener('input', e => {
+            masterVolumeNode.volume.value = e.target.value;
+            document.getElementById('volDisplay').innerText = `${e.target.value} dB`;
+        });
+
+        document.getElementById('lfoWave').addEventListener('change', e => vcaLfo.type = e.target.value);
+        document.getElementById('lfoRate').addEventListener('input', e => {
+            vcaLfo.frequency.value = e.target.value;
+            document.getElementById('lfoRateDisplay').innerText = `${parseFloat(e.target.value).toFixed(1)} Hz`;
+        });
+        document.getElementById('lfoDepth').addEventListener('input', e => {
+            let depth = parseFloat(e.target.value);
+            vcaLfo.min = 1 - depth;
+            document.getElementById('lfoDepthDisplay').innerText = `${Math.round(depth * 100)}%`;
+        });
+        document.getElementById('chorusMix').addEventListener('input', e => chorusNode.wet.value = e.target.value);
+        document.getElementById('delayTime').addEventListener('input', e => delayNode.delayTime.value = e.target.value);
+        document.getElementById('reverbMix').addEventListener('input', async e => {
+            if (e.target.value > 0 && !reverbNode.ready) await reverbNode.generate();
+            reverbNode.wet.value = e.target.value;
+        });
+
+        // UI Generointi & Vaihdot
+        frequencies.forEach((freq, idx) => {
+            const container = document.createElement('div');
+            container.className = 'band-column';
+            let labelText = freq >= 1000 ? (freq/1000).toFixed(1)+'k' : freq;
+            container.innerHTML = `
+                <span class="band-label">Gain</span>
+                <input type="range" id="gain-${idx}" min="0" max="3" value="1" step="0.05">
+                <span class="band-label">${labelText}</span>
+            `;
+            matrixContainer.appendChild(container);
+        });
+
+        sourceSelect.addEventListener('change', () => {
+            document.getElementById('audioGroup').style.display = sourceSelect.value === 'audio' ? 'block' : 'none';
+            document.getElementById('videoGroup').style.display = sourceSelect.value === 'video' ? 'block' : 'none';
+            if(isRunning) stopVocoder();
+        });
+
+        document.getElementById('audioFile').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            document.getElementById('audioStatus').innerText = "Puretaan...";
+            audioBuffer = new Tone.ToneAudioBuffer(url, () => {
+                document.getElementById('audioStatus').innerText = `Valmis: ${file.name}`;
+            });
+        });
+
+        document.getElementById('videoFile').addEventListener('change', e => {
+            document.getElementById('videoElement').src = URL.createObjectURL(e.target.files[0]);
+        });
+
+        document.getElementById('pitchSlider').addEventListener('input', e => {
+            document.getElementById('pitchDisplay').innerText = `${e.target.value} Hz`;
+            if (carrier) carrier.frequency.value = e.target.value;
+        });
+
+        document.getElementById('waveSelect').addEventListener('change', e => {
+            if (carrier) carrier.type = e.target.value;
+        });
+
+        toggleBtn.addEventListener('click', async () => {
+            if (!isRunning) await startVocoder();
+            else stopVocoder();
+        });
+
+        async function startVocoder() {
+            try {
+                await Tone.start();
+                
+                carrier = new Tone.Oscillator({ type: document.getElementById('waveSelect').value, frequency: document.getElementById('pitchSlider').value, volume: -3 }).start();
+
+                const type = sourceSelect.value;
+                if (type === 'mic') {
+                    modulatorSource = new Tone.UserMedia();
+                    await modulatorSource.open();
+                    modulatorSource.connect(modulatorBus);
+                } else if (type === 'system') {
+                    systemStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    modulatorSource = new Tone.MediaStreamSource(systemStream);
+                    modulatorSource.connect(modulatorBus);
+                } else if (type === 'audio') {
+                    if (!audioBuffer) { alert("Lataa audiotiedosto!"); stopVocoder(); return; }
+                    modulatorSource = new Tone.Player(audioBuffer).connect(modulatorBus);
+                    modulatorSource.loop = true;
+                    modulatorSource.start();
+                } else if (type === 'video') {
+                    if (!document.getElementById('videoElement').src) { alert("Lataa video!"); stopVocoder(); return; }
+                    modulatorSource = new Tone.MediaElementSource(document.getElementById('videoElement')).connect(modulatorBus);
+                    document.getElementById('videoElement').play();
+                } else if (type === 'none') {
+                    modulatorSource = null; 
+                }
+
+                frequencies.forEach((freq, idx) => {
+                    let modFilter = new Tone.Filter(freq, "bandpass"); modFilter.Q.value = 10;
+                    let meter = new Tone.Meter({ channels: 1, smoothing: 0.4 });
+                    modulatorBus.connect(modFilter); modFilter.connect(meter);
+
+                    let carFilter = new Tone.Filter(freq, "bandpass"); carFilter.Q.value = 10;
+                    let bandGain = new Tone.Gain(0);
+                    carrier.connect(carFilter); carFilter.connect(bandGain);
+                    bandGain.connect(vocoderBus);
+
+                    vocoderMatrix.push({ meter, gainNode: bandGain, slider: document.getElementById(`gain-${idx}`), modFilter, carFilter });
+                });
+
+                meterLoop = new Tone.Loop((time) => {
+                    vocoderMatrix.forEach((band) => {
+                        let finalGain = Tone.dbToGain(band.meter.getValue()) * parseFloat(band.slider.value) * 22; 
+                        if (finalGain > 2.5) finalGain = 2.5; 
+                        band.gainNode.gain.setTargetAtTime(finalGain, time, 0.015);
+                    });
+                }, "128n").start(0);
+
+                Tone.Transport.start();
+                isRunning = true;
+                toggleBtn.innerText = "Pysäytä Vocoder"; toggleBtn.style.background = "#ff4560";
+            } catch (err) {
+                console.error("Käynnistysvirhe:", err);
+                stopVocoder();
+            }
+        }
+
+        function stopVocoder() {
+            isRunning = false; Tone.Transport.stop();
+            if (meterLoop) meterLoop.dispose();
+            if (carrier) carrier.dispose();
+            if (modulatorSource) modulatorSource.dispose();
+            if (systemStream) systemStream.getTracks().forEach(t => t.stop());
+            try { document.getElementById('videoElement').pause(); } catch(e){}
+            
+            window.speechSynthesis.cancel(); 
+            
+            // TÄRKEÄ: Siivotaan suotimet, jotta Tone.js ei kaadu usean käynnistyksen jälkeen
+            vocoderMatrix.forEach(band => {
+                if (band.modFilter) band.modFilter.dispose();
+                if (band.carFilter) band.carFilter.dispose();
+                if (band.meter) band.meter.dispose();
+                if (band.gainNode) band.gainNode.dispose();
+            });
+            vocoderMatrix = [];
+            
+            toggleBtn.innerText = "Käynnistä Vocoder"; toggleBtn.style.background = "#00d2ff";
+        }
+    </script>
+</body>
+</html>

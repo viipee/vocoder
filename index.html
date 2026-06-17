@@ -79,10 +79,39 @@
         .mix-section { border: 1px solid #00d2ff55; }
         .info-text { color: #8a8a9e; font-size: 0.85rem; margin-top: 5px; }
     </style>
+
+    <script src="ios-audio-fix.js"></script>
+    
 </head>
 <body>
+<h1>My Audio Program</h1>
+    <button id="play-btn">Play Sound</button>
+    <button id="rec-btn">Record 3 Seconds</button>
 
-    <h1>Tone.js 20-Band Vocoder Studio</h1>
+    <script>
+        // --- PLAYBACK CODE ---
+        document.getElementById('play-btn').addEventListener('click', () => {
+            // Use 'window.globalAudioCtx' which was created inside ios-audio-fix.js
+            const oscillator = window.globalAudioCtx.createOscillator();
+            oscillator.connect(window.globalAudioCtx.destination);
+            
+            oscillator.start();
+            oscillator.stop(window.globalAudioCtx.currentTime + 0.5); // plays for 0.5 seconds
+        });
+
+        // --- RECORDING CODE ---
+        document.getElementById('rec-btn').addEventListener('click', async () => {
+            // Call the 'easyRecord' function from ios-audio-fix.js
+            const recording = await window.easyRecord(3000); 
+            
+            if (recording) {
+                // Play back what you just recorded
+                const playback = new Audio(recording.audioUrl);
+                playback.play();
+            }
+        });
+    </script>
+    <h1>20-Band Vocoder Studio</h1>
 
     <div class="panel">
         <h2>1. Äänenlähde (Modulator)</h2>
